@@ -5,6 +5,9 @@ import path from "path";
 import NodeClam from "clamscan";
 import fs from "fs";
 
+import { getJwtSecrets, jwtSign } from "./src/utils";
+import { envConfig, middleware } from "./src/config";
+
 interface resultTypes {
   isInfected: boolean;
   viruses: string[];
@@ -40,31 +43,48 @@ const deleteLocalFile = (localDiskFilePath: string) => fs.unlink(localDiskFilePa
     const clamScan = await new NodeClam().init({
       preference: "clamdscan",
       scanRecursively: false,
-      clamdscan: {
-      //  multiscan: true,
-        socket: "/var/run/clamav/clamd.ctl",
-      //  host: "127.0.0.1",
-      //  port: 3310,
+      clamscan: {
+        path: '/opt/homebrew/bin/clamscan', // Path to clamscan binary on your server
+        db: null, // Path to a custom virus definition database
+        scanArchives: true, // If true, scan archives (ex. zip, rar, tar, dmg, iso, etc...)
+        active: true // If true, this module will consider using the clamscan binary
       },
+      // clamdscan: {
+      // //  multiscan: true,
+      //   // socket: "/var/run/clamav/clamd.ctl",
+      // },
     });
 
-   app.get("/", async (_req, res) => res.json({message: "Nameste"}));
+    app.use(middleware)
 
-    app.post("/upload", upload.single("file"), async (req, res) => {
+    app.get("/", async (_req, res) => res.json({message: "Nameste"}));
+
+    app.post("/upload", upload.single("file"), async (req: any , res: any) => {
       try {
-        const { file , body : { store }  } = req;
-        let { source, path, region, error } = JSON.parse(store || '{}');
+        const { file, store, requestedFile   } = req;
+        let { source, path, region, error } = store;
         
         if (!file) return res.status(400).json({message:"File not found"});
 
-        const { filename, path: localDiskFilePath} = file;
+        const { filename, path: localDiskFilePath, originalname} = file;
+
+        const { previousKey,currentKey } = await getJwtSecrets();
+
+        // console.log({file});
+
+        const stores = {
+          "source": "clamav-innovatetch",
+          "path": `clamav/file-${Date.now() + "-" + Math.round(Math.random() * 1e9)}-${originalname}`
+        };
+
+        var token = jwtSign({ file, store:stores });
         
         const result : resultTypes = await clamScan.scanFile(localDiskFilePath);
 
-        if (!result.isInfected && (source || path)) {
+        if (!result.isInfected && (source || path) && requestedFile.originalname === originalname) {
           try {
             const s3Client = new S3Client({
-              region : region || "ap-southeast-1"
+              region : region || envConfig.AWS_DEFAULT_REGION
             });
             await s3Client.send(new PutObjectCommand({
               Bucket: source,
@@ -86,7 +106,10 @@ const deleteLocalFile = (localDiskFilePath: string) => fs.unlink(localDiskFilePa
           result,
           source,
           path,
-          error
+          error,
+          token,
+          currentKey,
+          previousKey
         });
 
       } catch (err) {
