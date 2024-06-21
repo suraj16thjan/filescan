@@ -1,6 +1,5 @@
 import NodeClam from "clamscan";
 
-
 const clamScan = await new NodeClam().init({
     preference: "clamdscan",
     scanRecursively: false,

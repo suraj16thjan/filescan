@@ -1,11 +1,11 @@
-import { envConfig, middleware } from "../config";
+import pathname from "path";
+import { envConfig } from "../config";
 import { 
-    getJwtSecrets, 
-    jwtSign, 
     s3Upload, 
     fileScan,
-    deleteLocalFile
-  } from "../utils";
+    deleteLocalFile,
+    publishMessage
+} from "../utils";
 
 interface resultTypes {
     isInfected: boolean;
@@ -14,15 +14,18 @@ interface resultTypes {
 }
 
 export const uploadScan = async (req: any , res: any) => {
+  const { file, store, requestedFile, subId } = req;
+  let { source, path, region, error } = store || {};
     try {
-      const { file, store, requestedFile } = req;
-      let { source, path, region, error } = store || {};
-      
+
+      console.log(subId)
       if (!file) return res.status(400).json({message:"File not found"});
 
       const { filename, path: localDiskFilePath, originalname} = file;
       
       const result : resultTypes = await fileScan(localDiskFilePath);
+
+      await publishMessage(subId, result);
 
       if (!result.isInfected && (source || path) && requestedFile.originalname === originalname) {
         try {
@@ -30,11 +33,12 @@ export const uploadScan = async (req: any , res: any) => {
             source,
             path, 
             region: region || envConfig.AWS_DEFAULT_REGION,
-            localDiskFilePath: `../../${localDiskFilePath}`,
+            localDiskFilePath: pathname.join(`${__dirname}`, `../../${localDiskFilePath}`),
             mimetype: file.mimetype
           })
+          await publishMessage(subId, 'uploaded');
 
-          console.log(`File ${filename} uploaded successfully s3://${source}${path}.`);
+          console.log(`File ${filename} uploaded successfully to s3://${source}${path}.`);
         } catch (err) {
           error = err
           console.log(err);
@@ -51,6 +55,7 @@ export const uploadScan = async (req: any , res: any) => {
       });
 
     } catch (err) {
+      await publishMessage(subId, "failed");
       console.log(err);
     }
   }

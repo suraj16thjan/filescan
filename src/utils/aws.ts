@@ -10,15 +10,20 @@ interface optionsTypes {
 }
 
 export const s3Upload = async (options : optionsTypes) => {
-    const { source, path, region, localDiskFilePath, mimetype } = options
-    const s3Client = new S3Client({
-        region : region
-    });
-
-    await s3Client.send(new PutObjectCommand({
-        Bucket: source,
-        Key: path,
-        Body: fs.readFileSync(localDiskFilePath),
-        ContentType: mimetype
-    }));
+    try {
+        console.log(options)
+        const { source, path, region, localDiskFilePath, mimetype } = options
+        const s3Client = new S3Client({
+            region
+        });
+    
+        await s3Client.send(new PutObjectCommand({
+            Bucket: source,
+            Key: path,
+            Body: fs.readFileSync(localDiskFilePath),
+            ContentType: mimetype
+        }));
+    } catch (error) {
+        console.log(error)
+    }
 }
